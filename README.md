@@ -17,15 +17,20 @@
 - `shared/` – список классов COCO и тестовое изображение;
 - `models/yolov8/` – локальные ONNX-экспорты (игнорируются Git);
 - `YOLOv8/` – локальные `.pt`-чекпоинты Ultralytics (игнорируются Git);
-- `scripts/` – сборка OpenCV, сборка проекта и экспорт моделей;
-- `third_party/opencv/` – игнорируется; локальная сборка OpenCV
-  (см. [`docs/opencv-windows.md`](docs/opencv-windows.md)).
+- `scripts/` – сборка OpenCV, загрузка ONNX Runtime, сборка проекта и
+  экспорт моделей;
+- `third_party/` – игнорируется; локальная сборка OpenCV
+  (см. [`docs/opencv-windows.md`](docs/opencv-windows.md)) и
+  распакованный ONNX Runtime.
 
 ## Зависимости
 
 - CMake >= 3.24, Ninja (желательно), MSVC с поддержкой C++23
   (Visual Studio C++ desktop workload);
 - OpenCV >= 4.7 – собирается локально скриптом (пиновано `4.14.0`);
+- ONNX Runtime – скачивается скриптом
+  `scripts\get_onnxruntime_windows.ps1` (пиновано `1.27.1`); без него
+  проект собирается только с движком OpenCV DNN;
 - Python 3.12 – для экспорта моделей в ONNX.
 
 ## Модель
@@ -81,8 +86,11 @@ build\windows-release\cpp\yolov8-seg.exe `
 ```
 
 Любая из моделей `n`, `s`, `m`, `l`, `x` работает через один декодер.
+Инференс выполняет ONNX Runtime (`--engine ort`, по умолчанию) или
+OpenCV DNN (`--engine opencv`); оба движка дают идентичные детекции.
 Дополнительные параметры: `--conf 0.25`, `--nms 0.45`, `--mask-threshold 0.5`,
-`--warmup`, `--iterations`. Без `--classes` имена классов в JSON остаются
+`--warmup`, `--iterations` (при нескольких итерациях печатается min/медиана
+времени инференса). Без `--classes` имена классов в JSON остаются
 пустыми, а подписи на изображении становятся `class-<id>`.
 
 Для запуска exe вне `build_windows.ps1` каталог с DLL OpenCV

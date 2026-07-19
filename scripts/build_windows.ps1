@@ -24,6 +24,8 @@ if (-not (Test-Path -LiteralPath $opencvInstall -PathType Container)) {
     throw "OpenCV install was not found in $opencvInstall. Run scripts\build_opencv_windows.ps1 first."
 }
 
+& (Join-Path $PSScriptRoot 'get_onnxruntime_windows.ps1')
+
 Import-MsvcEnvironment
 $env:Path = "$(Join-Path $opencvInstall 'bin');$env:Path"
 

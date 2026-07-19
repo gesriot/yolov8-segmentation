@@ -1,11 +1,12 @@
 #pragma once
 
 #include <filesystem>
-#include <string>
+#include <memory>
 #include <vector>
 
 #include <opencv2/core.hpp>
-#include <opencv2/dnn.hpp>
+
+#include "yolo_seg/inference.hpp"
 
 namespace yolo_seg {
 
@@ -15,6 +16,7 @@ struct Yolov8Config {
     float confidence_threshold = 0.25F;
     float nms_threshold = 0.45F;
     float mask_threshold = 0.5F;
+    Engine engine = Engine::onnxruntime;
 };
 
 struct Detection {
@@ -47,8 +49,7 @@ public:
 
 private:
     Yolov8Config config_;
-    cv::dnn::Net network_;
-    std::vector<std::string> output_names_;
+    std::unique_ptr<InferenceEngine> engine_;
 };
 
 } // namespace yolo_seg

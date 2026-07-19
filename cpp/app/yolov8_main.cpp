@@ -35,8 +35,8 @@ void print_usage(std::string_view executable)
 {
     std::println(stderr,
                  "Usage: {} --model MODEL.onnx --input IMAGE --output RESULT.png --json RESULT.json\n"
-                 "          [--classes CLASSES.txt] [--conf 0.25] [--nms 0.45] [--mask-threshold 0.5]\n"
-                 "          [--warmup 1] [--iterations 1]",
+                 "          [--classes CLASSES.txt] [--engine ort|opencv] [--conf 0.25] [--nms 0.45]\n"
+                 "          [--mask-threshold 0.5] [--warmup 1] [--iterations 1]",
                  executable);
 }
 
@@ -80,6 +80,18 @@ template <typename Value>
         }
         else if (argument == "--classes") {
             options.classes = value;
+        }
+        else if (argument == "--engine") {
+            if (value == "ort" || value == "onnxruntime") {
+                options.config.engine = yolo_seg::Engine::onnxruntime;
+            }
+            else if (value == "opencv" || value == "opencv-dnn") {
+                options.config.engine = yolo_seg::Engine::opencv_dnn;
+            }
+            else {
+                throw std::runtime_error(
+                    std::format("Unknown engine (expected ort or opencv): {}", value));
+            }
         }
         else if (argument == "--conf") {
             options.config.confidence_threshold = parse_number<float>(argument, value);
@@ -213,12 +225,14 @@ void write_json(const Options& options, const cv::Mat& image,
                "{{\n"
                "  \"schema_version\": 1,\n"
                "  \"implementation\": \"yolov8-cpp\",\n"
+               "  \"engine\": \"{}\",\n"
                "  \"opencv_version\": \"{}\",\n"
                "  \"model\": \"{}\",\n"
                "  \"input\": \"{}\",\n"
                "  \"image_size\": {{\"width\": {}, \"height\": {}}},\n"
                "  \"detections\": [\n",
-               CV_VERSION, json_escape(options.model.filename().string()),
+               yolo_seg::to_string(options.config.engine), CV_VERSION,
+               json_escape(options.model.filename().string()),
                json_escape(options.input.filename().string()), image.cols, image.rows);
 
     for (std::size_t index = 0; index < detections.size(); ++index) {
@@ -274,8 +288,11 @@ int main(int argc, char** argv)
         }
 
         yolo_seg::Prediction prediction;
+        std::vector<double> inference_samples;
+        inference_samples.reserve(static_cast<std::size_t>(options.iterations));
         for (int iteration = 0; iteration < options.iterations; ++iteration) {
             prediction = segmenter.predict(image);
+            inference_samples.push_back(prediction.timing.inference_ms);
         }
 
         ensure_parent_directory(options.output);
@@ -287,12 +304,20 @@ int main(int argc, char** argv)
         }
         write_json(options, image, prediction.detections, class_names);
 
-        std::println("OpenCV {}", CV_VERSION);
+        std::println("OpenCV {}, engine {}", CV_VERSION,
+                     yolo_seg::to_string(options.config.engine));
         std::println("Detections: {}", prediction.detections.size());
         std::println("Timing (last iteration): preprocess {:.2f} ms, inference {:.2f} ms, "
                      "postprocess {:.2f} ms, total {:.2f} ms",
                      prediction.timing.preprocess_ms, prediction.timing.inference_ms,
                      prediction.timing.postprocess_ms, prediction.timing.total_ms);
+        if (options.iterations > 1) {
+            std::ranges::sort(inference_samples);
+            const auto median =
+                inference_samples[inference_samples.size() / 2];
+            std::println("Inference over {} iterations: min {:.2f} ms, median {:.2f} ms",
+                         options.iterations, inference_samples.front(), median);
+        }
         std::println("Image: {}", options.output.string());
         std::println("JSON: {}", options.json.string());
         return EXIT_SUCCESS;

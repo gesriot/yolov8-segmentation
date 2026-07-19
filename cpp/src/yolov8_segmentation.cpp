@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace yolo_seg {
@@ -79,7 +80,7 @@ struct LetterboxResult {
     return {left, top, right - left, bottom - top};
 }
 
-void validate_outputs(const std::vector<cv::Mat>& outputs)
+void validate_outputs(std::span<const cv::Mat> outputs)
 {
     if (outputs.size() != 2) {
         throw std::runtime_error("YOLOv8 requires exactly two output tensors");
@@ -153,16 +154,10 @@ void validate_outputs(const std::vector<cv::Mat>& outputs)
 Yolov8Segmenter::Yolov8Segmenter(const std::filesystem::path& model_path,
                                  Yolov8Config config)
     : config_(config),
-      network_(cv::dnn::readNet(model_path.string()))
+      engine_(make_engine(config.engine, model_path))
 {
     if (config_.input_width <= 0 || config_.input_height <= 0) {
         throw std::invalid_argument("YOLOv8 input dimensions must be positive");
-    }
-    network_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-    network_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-    output_names_ = network_.getUnconnectedOutLayersNames();
-    if (output_names_.size() != 2) {
-        throw std::runtime_error("YOLOv8 ONNX model must expose two outputs");
     }
 }
 
@@ -184,9 +179,7 @@ Prediction Yolov8Segmenter::predict(const cv::Mat& image)
     const auto preprocess_end = Clock::now();
 
     const auto inference_start = preprocess_end;
-    network_.setInput(blob);
-    std::vector<cv::Mat> outputs;
-    network_.forward(outputs, output_names_);
+    const std::span<const cv::Mat> outputs = engine_->forward(blob);
     const auto inference_end = Clock::now();
 
     const auto postprocess_start = inference_end;
