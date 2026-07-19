@@ -1,0 +1,21 @@
+# Local builds
+build/
+cmake-build-*/
+out/
+
+# Project-local (or junction-linked) OpenCV install
+/third_party/
+
+# Models and generated inference artifacts
+models/**/*.onnx
+models/**/*.pt
+YOLOv8/
+outputs/
+
+# Python virtual environment for the ONNX export
+.venv/
+
+# Editor files
+.idea/
+.vscode/
+*.swp
