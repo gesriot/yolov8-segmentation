@@ -8,7 +8,7 @@ if(OpenCV_VERSION VERSION_LESS 4.7)
 endif()
 
 add_library(yolo-seg-cpp src/yolov8_segmentation.cpp)
-target_compile_features(yolo-seg-cpp PUBLIC cxx_std_20)
+target_compile_features(yolo-seg-cpp PUBLIC cxx_std_23)
 target_include_directories(
     yolo-seg-cpp
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -17,7 +17,7 @@ target_include_directories(
 target_link_libraries(yolo-seg-cpp PUBLIC ${OpenCV_LIBS})
 
 add_executable(yolov8-seg app/yolov8_main.cpp)
-target_compile_features(yolov8-seg PRIVATE cxx_std_20)
+target_compile_features(yolov8-seg PRIVATE cxx_std_23)
 target_link_libraries(yolov8-seg PRIVATE yolo-seg-cpp)
 
 if(BUILD_TESTING)

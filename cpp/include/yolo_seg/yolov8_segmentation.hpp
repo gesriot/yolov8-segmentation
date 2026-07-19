@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -40,7 +41,9 @@ public:
     explicit Yolov8Segmenter(const std::filesystem::path& model_path,
                              Yolov8Config config = {});
 
-    Prediction predict(const cv::Mat& image);
+    [[nodiscard]] Prediction predict(const cv::Mat& image);
+
+    [[nodiscard]] const Yolov8Config& config() const noexcept { return config_; }
 
 private:
     Yolov8Config config_;

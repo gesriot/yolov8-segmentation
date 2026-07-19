@@ -1,0 +1,24 @@
+# Formatting rules for the C++ sources under cpp/.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++23
+
+IndentWidth: 4
+ColumnLimit: 100
+AccessModifierOffset: -4
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  BeforeElse: true
+
+AllowShortFunctionsOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: true
+BinPackParameters: true
+PointerAlignment: Left
+QualifierAlignment: Leave
+SpaceAfterTemplateKeyword: true
+
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive

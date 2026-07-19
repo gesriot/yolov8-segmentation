@@ -1,10 +1,15 @@
 #include <algorithm>
+#include <charconv>
+#include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
+#include <print>
+#include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -26,29 +31,41 @@ struct Options {
     int iterations = 1;
 };
 
-void print_usage(const char* executable)
+void print_usage(std::string_view executable)
 {
-    std::cerr << "Usage: " << executable
-              << " --model MODEL.onnx --input IMAGE --output RESULT.png --json RESULT.json\n"
+    std::println(stderr,
+                 "Usage: {} --model MODEL.onnx --input IMAGE --output RESULT.png --json RESULT.json\n"
                  "          [--classes CLASSES.txt] [--conf 0.25] [--nms 0.45] [--mask-threshold 0.5]\n"
-                 "          [--warmup 1] [--iterations 1]\n";
+                 "          [--warmup 1] [--iterations 1]",
+                 executable);
 }
 
-Options parse_options(int argc, char** argv)
+template <typename Value>
+[[nodiscard]] Value parse_number(std::string_view argument, std::string_view text)
+{
+    Value value{};
+    const auto [rest, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error != std::errc{} || rest != text.data() + text.size()) {
+        throw std::runtime_error(std::format("Invalid value for {}: {}", argument, text));
+    }
+    return value;
+}
+
+[[nodiscard]] Options parse_options(std::span<char*> arguments)
 {
     Options options;
 
-    for (int index = 1; index < argc; ++index) {
-        const std::string argument = argv[index];
+    for (std::size_t index = 1; index < arguments.size(); ++index) {
+        const std::string_view argument = arguments[index];
         if (argument == "--help" || argument == "-h") {
-            print_usage(argv[0]);
-            std::exit(0);
+            print_usage(arguments[0]);
+            std::exit(EXIT_SUCCESS);
         }
-        if (index + 1 >= argc) {
-            throw std::runtime_error("Missing value for argument: " + argument);
+        if (index + 1 >= arguments.size()) {
+            throw std::runtime_error(std::format("Missing value for argument: {}", argument));
         }
 
-        const std::string value = argv[++index];
+        const std::string_view value = arguments[++index];
         if (argument == "--model") {
             options.model = value;
         }
@@ -65,28 +82,29 @@ Options parse_options(int argc, char** argv)
             options.classes = value;
         }
         else if (argument == "--conf") {
-            options.config.confidence_threshold = std::stof(value);
+            options.config.confidence_threshold = parse_number<float>(argument, value);
         }
         else if (argument == "--nms") {
-            options.config.nms_threshold = std::stof(value);
+            options.config.nms_threshold = parse_number<float>(argument, value);
         }
         else if (argument == "--mask-threshold") {
-            options.config.mask_threshold = std::stof(value);
+            options.config.mask_threshold = parse_number<float>(argument, value);
         }
         else if (argument == "--warmup") {
-            options.warmup = std::stoi(value);
+            options.warmup = parse_number<int>(argument, value);
         }
         else if (argument == "--iterations") {
-            options.iterations = std::stoi(value);
+            options.iterations = parse_number<int>(argument, value);
         }
         else {
-            throw std::runtime_error("Unknown argument: " + argument);
+            throw std::runtime_error(std::format("Unknown argument: {}", argument));
         }
     }
 
     if (options.model.empty() || options.input.empty() || options.output.empty()
         || options.json.empty()) {
-        throw std::runtime_error("All --model, --input, --output and --json arguments are required");
+        throw std::runtime_error(
+            "All --model, --input, --output and --json arguments are required");
     }
     if (options.warmup < 0 || options.iterations < 1) {
         throw std::runtime_error("--warmup must be >= 0 and --iterations must be >= 1");
@@ -94,7 +112,7 @@ Options parse_options(int argc, char** argv)
     return options;
 }
 
-std::vector<std::string> load_class_names(const std::filesystem::path& path)
+[[nodiscard]] std::vector<std::string> load_class_names(const std::filesystem::path& path)
 {
     std::vector<std::string> names;
     if (path.empty()) {
@@ -107,7 +125,7 @@ std::vector<std::string> load_class_names(const std::filesystem::path& path)
     }
     std::string line;
     while (std::getline(stream, line)) {
-        if (!line.empty() && line.back() == '\r') {
+        if (line.ends_with('\r')) {
             line.pop_back();
         }
         if (!line.empty()) {
@@ -117,15 +135,16 @@ std::vector<std::string> load_class_names(const std::filesystem::path& path)
     return names;
 }
 
-std::string class_name_for(int class_id, const std::vector<std::string>& class_names)
+[[nodiscard]] std::string class_name_for(int class_id,
+                                         std::span<const std::string> class_names)
 {
     if (class_id >= 0 && static_cast<std::size_t>(class_id) < class_names.size()) {
         return class_names[static_cast<std::size_t>(class_id)];
     }
-    return "";
+    return {};
 }
 
-std::string json_escape(const std::string& value)
+[[nodiscard]] std::string json_escape(std::string_view value)
 {
     std::string escaped;
     escaped.reserve(value.size());
@@ -142,7 +161,7 @@ std::string json_escape(const std::string& value)
     return escaped;
 }
 
-cv::Scalar color_for_class(int class_id)
+[[nodiscard]] cv::Scalar color_for_class(int class_id) noexcept
 {
     return {
         static_cast<double>((37 * class_id + 53) % 256),
@@ -151,9 +170,9 @@ cv::Scalar color_for_class(int class_id)
     };
 }
 
-cv::Mat render_result(const cv::Mat& source,
-                      const std::vector<yolo_seg::Detection>& detections,
-                      const std::vector<std::string>& class_names)
+[[nodiscard]] cv::Mat render_result(const cv::Mat& source,
+                                    std::span<const yolo_seg::Detection> detections,
+                                    std::span<const std::string> class_names)
 {
     cv::Mat rendered = source.clone();
     cv::Mat mask_overlay = source.clone();
@@ -169,9 +188,9 @@ cv::Mat render_result(const cv::Mat& source,
 
         std::string label = class_name_for(detection.class_id, class_names);
         if (label.empty()) {
-            label = "class-" + std::to_string(detection.class_id);
+            label = std::format("class-{}", detection.class_id);
         }
-        label += ":" + cv::format("%.4f", detection.confidence);
+        label += std::format(":{:.4f}", detection.confidence);
         const int top = std::max(detection.box.y, 18);
         cv::putText(rendered, label, cv::Point(detection.box.x, top),
                     cv::FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv::LINE_AA);
@@ -182,24 +201,25 @@ cv::Mat render_result(const cv::Mat& source,
 }
 
 void write_json(const Options& options, const cv::Mat& image,
-                const std::vector<yolo_seg::Detection>& detections,
-                const std::vector<std::string>& class_names)
+                std::span<const yolo_seg::Detection> detections,
+                std::span<const std::string> class_names)
 {
     std::ofstream stream(options.json);
     if (!stream) {
         throw std::runtime_error("Cannot open JSON output: " + options.json.string());
     }
 
-    stream << std::fixed << std::setprecision(6);
-    stream << "{\n"
-           << "  \"schema_version\": 1,\n"
-           << "  \"implementation\": \"yolov8-cpp\",\n"
-           << "  \"opencv_version\": \"" << CV_VERSION << "\",\n"
-           << "  \"model\": \"" << json_escape(options.model.filename().string()) << "\",\n"
-           << "  \"input\": \"" << json_escape(options.input.filename().string()) << "\",\n"
-           << "  \"image_size\": {\"width\": " << image.cols
-           << ", \"height\": " << image.rows << "},\n"
-           << "  \"detections\": [\n";
+    std::print(stream,
+               "{{\n"
+               "  \"schema_version\": 1,\n"
+               "  \"implementation\": \"yolov8-cpp\",\n"
+               "  \"opencv_version\": \"{}\",\n"
+               "  \"model\": \"{}\",\n"
+               "  \"input\": \"{}\",\n"
+               "  \"image_size\": {{\"width\": {}, \"height\": {}}},\n"
+               "  \"detections\": [\n",
+               CV_VERSION, json_escape(options.model.filename().string()),
+               json_escape(options.input.filename().string()), image.cols, image.rows);
 
     for (std::size_t index = 0; index < detections.size(); ++index) {
         const auto& detection = detections[index];
@@ -207,20 +227,16 @@ void write_json(const Options& options, const cv::Mat& image,
         const int mask_pixels =
             detection.box_mask.empty() ? 0 : cv::countNonZero(detection.box_mask);
 
-        stream << "    {\"class_id\": " << detection.class_id
-               << ", \"class_name\": \"" << json_escape(class_name)
-               << "\", \"confidence\": " << detection.confidence
-               << ", \"box\": {\"x\": " << detection.box.x
-               << ", \"y\": " << detection.box.y
-               << ", \"width\": " << detection.box.width
-               << ", \"height\": " << detection.box.height << "}"
-               << ", \"mask_pixels\": " << mask_pixels << "}";
-        if (index + 1 != detections.size()) {
-            stream << ',';
-        }
-        stream << '\n';
+        std::print(stream,
+                   "    {{\"class_id\": {}, \"class_name\": \"{}\", \"confidence\": {:.6f}, "
+                   "\"box\": {{\"x\": {}, \"y\": {}, \"width\": {}, \"height\": {}}}, "
+                   "\"mask_pixels\": {}}}{}\n",
+                   detection.class_id, json_escape(class_name), detection.confidence,
+                   detection.box.x, detection.box.y, detection.box.width,
+                   detection.box.height, mask_pixels,
+                   index + 1 == detections.size() ? "" : ",");
     }
-    stream << "  ]\n}\n";
+    std::print(stream, "  ]\n}}\n");
 }
 
 void ensure_parent_directory(const std::filesystem::path& path)
@@ -235,7 +251,7 @@ void ensure_parent_directory(const std::filesystem::path& path)
 int main(int argc, char** argv)
 {
     try {
-        const Options options = parse_options(argc, argv);
+        const Options options = parse_options({argv, static_cast<std::size_t>(argc)});
         if (!std::filesystem::is_regular_file(options.model)) {
             throw std::runtime_error("Model does not exist: " + options.model.string());
         }
@@ -245,15 +261,16 @@ int main(int argc, char** argv)
 
         const std::vector<std::string> class_names = load_class_names(options.classes);
 
-        cv::Mat image = cv::imread(options.input.string(), cv::IMREAD_COLOR);
+        const cv::Mat image = cv::imread(options.input.string(), cv::IMREAD_COLOR);
         if (image.empty()) {
-            throw std::runtime_error("OpenCV cannot decode input image: " + options.input.string());
+            throw std::runtime_error(
+                "OpenCV cannot decode input image: " + options.input.string());
         }
 
         yolo_seg::Yolov8Segmenter segmenter(options.model, options.config);
 
         for (int iteration = 0; iteration < options.warmup; ++iteration) {
-            segmenter.predict(image);
+            std::ignore = segmenter.predict(image);
         }
 
         yolo_seg::Prediction prediction;
@@ -265,29 +282,28 @@ int main(int argc, char** argv)
         ensure_parent_directory(options.json);
         const cv::Mat rendered = render_result(image, prediction.detections, class_names);
         if (!cv::imwrite(options.output.string(), rendered)) {
-            throw std::runtime_error("OpenCV cannot write output image: " + options.output.string());
+            throw std::runtime_error(
+                "OpenCV cannot write output image: " + options.output.string());
         }
         write_json(options, image, prediction.detections, class_names);
 
-        std::cout << "OpenCV " << CV_VERSION << '\n'
-                  << "Detections: " << prediction.detections.size() << '\n'
-                  << std::fixed << std::setprecision(2)
-                  << "Timing (last iteration): preprocess "
-                  << prediction.timing.preprocess_ms << " ms, inference "
-                  << prediction.timing.inference_ms << " ms, postprocess "
-                  << prediction.timing.postprocess_ms << " ms, total "
-                  << prediction.timing.total_ms << " ms\n"
-                  << "Image: " << options.output << '\n'
-                  << "JSON: " << options.json << '\n';
-        return 0;
+        std::println("OpenCV {}", CV_VERSION);
+        std::println("Detections: {}", prediction.detections.size());
+        std::println("Timing (last iteration): preprocess {:.2f} ms, inference {:.2f} ms, "
+                     "postprocess {:.2f} ms, total {:.2f} ms",
+                     prediction.timing.preprocess_ms, prediction.timing.inference_ms,
+                     prediction.timing.postprocess_ms, prediction.timing.total_ms);
+        std::println("Image: {}", options.output.string());
+        std::println("JSON: {}", options.json.string());
+        return EXIT_SUCCESS;
     }
     catch (const cv::Exception& error) {
-        std::cerr << "OpenCV error: " << error.what() << '\n';
+        std::println(stderr, "OpenCV error: {}", error.what());
     }
     catch (const std::exception& error) {
-        std::cerr << "Error: " << error.what() << '\n';
+        std::println(stderr, "Error: {}", error.what());
     }
 
     print_usage(argv[0]);
-    return 1;
+    return EXIT_FAILURE;
 }

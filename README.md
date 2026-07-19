@@ -1,6 +1,6 @@
 # YOLOv8 segmentation with OpenCV
 
-Сегментация изображений на C++ с OpenCV 4 и моделями YOLOv8-seg:
+Сегментация изображений на C++23 с OpenCV 4 и моделями YOLOv8-seg:
 библиотека + CLI, сборка через пресеты CMake, тесты через CTest.
 
 Конвейер инференса: letterbox → blob → forward → декодер → маски.
@@ -23,7 +23,8 @@
 
 ## Зависимости
 
-- CMake >= 3.24, Ninja (желательно), MSVC (Visual Studio C++ desktop workload);
+- CMake >= 3.24, Ninja (желательно), MSVC с поддержкой C++23
+  (Visual Studio C++ desktop workload);
 - OpenCV >= 4.7 – собирается локально скриптом (пиновано `4.14.0`);
 - Python 3.12 – для экспорта моделей в ONNX.
 
